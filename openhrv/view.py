@@ -38,6 +38,7 @@ from openhrv.config import (
     MAX_PLOT_IBI,
 )
 from openhrv import __version__ as version, resources  # noqa
+import time
 
 BLUE = QColor(135, 206, 250)
 WHITE = QColor(255, 255, 255)
@@ -45,7 +46,7 @@ GREEN = QColor(0, 255, 0)
 YELLOW = QColor(255, 255, 0)
 RED = QColor(255, 0, 0)
 
-
+start_time = 0;
 class PacerWidget(QChartView):
     def __init__(
         self, x_values: Iterable[float], y_values: Iterable[float], color: QColor = BLUE
@@ -190,12 +191,12 @@ class View(QMainWindow):
         self.signals.start_recording.connect(self.logger.start_recording)
         self.logger.moveToThread(self.logger_thread)
 
-        self.model.ibis_buffer_update.connect(self.logger.write_to_file)
-        self.model.addresses_update.connect(self.logger.write_to_file)
-        self.model.pacer_rate_update.connect(self.logger.write_to_file)
-        self.model.hrv_target_update.connect(self.logger.write_to_file)
+        #self.model.ibis_buffer_update.connect(self.logger.write_to_file)
+        #self.model.addresses_update.connect(self.logger.write_to_file)
+        #self.model.pacer_rate_update.connect(self.logger.write_to_file)
+        #self.model.hrv_target_update.connect(self.logger.write_to_file)
         self.model.mean_hrv_update.connect(self.logger.write_to_file)
-        self.signals.annotation.connect(self.logger.write_to_file)
+        #self.signals.annotation.connect(self.logger.write_to_file)
 
         self.ibis_widget = XYSeriesWidget(
             self.model.ibis_seconds, self.model.ibis_buffer
@@ -267,6 +268,8 @@ class View(QMainWindow):
 
         self.start_recording_button = QPushButton("Start")
         self.start_recording_button.clicked.connect(self.get_filepath)
+        if self.start_recording_button.clicked:
+            start_time = time.time();
 
         self.save_recording_button = QPushButton("Save")
         self.save_recording_button.clicked.connect(self.logger.save_recording)
@@ -345,6 +348,8 @@ class View(QMainWindow):
 
     def get_filepath(self):
         current_time: str = datetime.now().strftime("%Y-%m-%d-%H-%M")
+        
+        Logger.start_time = time.time();
         default_file_name: str = f"OpenHRV_{current_time}.csv"
         # native file dialog not reliable on Windows (most likely COM issues)
         file_path: str = QFileDialog.getSaveFileName(
