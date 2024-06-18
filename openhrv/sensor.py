@@ -11,7 +11,7 @@ from PySide6.QtBluetooth import (
 from math import ceil
 from typing import Union
 from openhrv.utils import get_sensor_address, get_sensor_remote_address
-
+import numpy as np
 
 class SensorScanner(QObject):
     sensor_update = Signal(object)
@@ -57,6 +57,7 @@ class SensorClient(QObject):
 
     ibi_update = Signal(object)
     status_update = Signal(str)
+    data_processed = Signal(list)  # New signal to emit processed data
 
     def __init__(self):
         super().__init__()
@@ -71,6 +72,8 @@ class SensorClient(QObject):
         self.HR_CHARACTERISTIC: QBluetoothUuid.CharacteristicType = (
             QBluetoothUuid.CharacteristicType.HeartRateMeasurement
         )
+        self.rr_intervals =[]
+        self.data = []
 
     def _sensor_address(self):
         return get_sensor_remote_address(self.client)
@@ -128,6 +131,7 @@ class SensorClient(QObject):
             return
         self.hr_service.stateChanged.connect(self._start_hr_notification)
         self.hr_service.characteristicChanged.connect(self._data_handler)
+
         self.hr_service.discoverDetails()
 
     def _start_hr_notification(self, state: QLowEnergyService.ServiceState):
@@ -178,6 +182,10 @@ class SensorClient(QObject):
         self.status_update.emit(f"An error occurred: {error}. Disconnecting sensor.")
         self._reset_connection()
 
+    def get_data(self):
+        # This method should call the internal _data_handler method and return its output
+        return self._data_handler()
+
     def _data_handler(self, _, data: QByteArray):  # _ is unused but mandatory argument
         """
         `data` is formatted according to the
@@ -204,6 +212,8 @@ class SensorClient(QObject):
         """
         heart_rate_measurement_bytes: bytes = data.data()
 
+        #print(heart_rate_measurement_bytes)     #김현탁 추가
+
         byte0: int = heart_rate_measurement_bytes[0]
         uint8_format: bool = (byte0 & 1) == 0
         energy_expenditure: bool = ((byte0 >> 3) & 1) == 1
@@ -213,23 +223,50 @@ class SensorClient(QObject):
             return
 
         first_rr_byte: int = 2
+
         if uint8_format:
-            # hr = data[1]
-            pass
+            heart_rate = heart_rate_measurement_bytes[1]
+            print(f"Heart Rate (uint8): {heart_rate}")
         else:
-            # hr = (data[2] << 8) | data[1] # uint16
+            heart_rate = (heart_rate_measurement_bytes[2] << 8) | heart_rate_measurement_bytes[1]
+            print(f"Heart Rate (uint16): {heart_rate}")
             first_rr_byte += 1
+
         if energy_expenditure:
-            # ee = (data[first_rr_byte + 1] << 8) | data[first_rr_byte]
+            energy_exp = (heart_rate_measurement_bytes[first_rr_byte + 1] << 8) | heart_rate_measurement_bytes[first_rr_byte]
+            print(f"Energy Expenditure: {energy_exp}")
             first_rr_byte += 2
 
         for i in range(first_rr_byte, len(heart_rate_measurement_bytes), 2):
-            ibi: int = (
-                heart_rate_measurement_bytes[i + 1] << 8
-            ) | heart_rate_measurement_bytes[i]
+            ibi: int = (heart_rate_measurement_bytes[i + 1] << 8) | heart_rate_measurement_bytes[i]
             # Polar H7, H9, and H10 record IBIs in 1/1024 seconds format.
             # Convert 1/1024 sec format to milliseconds.
             # TODO: move conversion to model and only convert if sensor doesn't
             # transmit data in milliseconds.
-            ibi = ceil(ibi / 1024 * 1000)
+            ibi_ms = ceil(ibi / 1024 * 1000)
             self.ibi_update.emit(ibi)
+            print(f"RR Interval: {ibi_ms} ms")
+            self.rr_intervals.append(ibi_ms)
+            self.ibi_update.emit(ibi_ms)
+
+        if len(self.rr_intervals) > 1:
+            sdnn, rmssd = self.calculate_hrv()
+        else:
+            sdnn, rmssd = 0,0
+
+        processed_data = [heart_rate, ibi_ms, sdnn, rmssd]
+        self.data_processed.emit(processed_data)  # Emit the processed data
+        return processed_data
+
+    def calculate_hrv(self):
+        # Calculate SDNN (Standard Deviation of NN intervals)
+        sdnn = np.std(self.rr_intervals, ddof=1)
+        print(f"SDNN: {sdnn} ms")
+
+        # Calculate RMSSD (Root Mean Square of Successive Differences)
+        diff_intervals = np.diff(self.rr_intervals)
+        rmssd = np.sqrt(np.mean(diff_intervals ** 2))
+        print(f"RMSSD: {rmssd} ms")
+
+        return sdnn, rmssd
+    

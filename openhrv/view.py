@@ -190,12 +190,15 @@ class View(QMainWindow):
         self.signals.start_recording.connect(self.logger.start_recording)
         self.logger.moveToThread(self.logger_thread)
 
-        self.model.ibis_buffer_update.connect(self.logger.write_to_file)
-        self.model.addresses_update.connect(self.logger.write_to_file)
-        self.model.pacer_rate_update.connect(self.logger.write_to_file)
-        self.model.hrv_target_update.connect(self.logger.write_to_file)
-        self.model.mean_hrv_update.connect(self.logger.write_to_file)
-        self.signals.annotation.connect(self.logger.write_to_file)
+        self.sensor.data_processed.connect(self.logger.handle_sensor_data)
+
+
+        #self.model.ibis_buffer_update.connect(self.logger.write_to_file)
+        #self.model.addresses_update.connect(self.logger.write_to_file)
+        #self.model.pacer_rate_update.connect(self.logger.write_to_file)
+        #self.model.hrv_target_update.connect(self.logger.write_to_file)
+        #self.model.mean_hrv_update.connect(self.logger.write_to_file)
+        #self.signals.annotation.connect(self.logger.write_to_file)
 
         self.ibis_widget = XYSeriesWidget(
             self.model.ibis_seconds, self.model.ibis_buffer
